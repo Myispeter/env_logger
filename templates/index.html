@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IoT Dashboard - Pro Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f4f4f4; padding-top: 20px; }
+        .container { width: 85%; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        
+        /* 按钮样式控制 */
+        .control-panel { margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee; }
+        .btn { 
+            padding: 12px 25px; margin: 10px; font-size: 16px; font-weight: bold;
+            border: none; border-radius: 5px; cursor: pointer; transition: 0.3s;
+        }
+        .btn-on { background-color: #ff4444; color: white; }
+        .btn-off { background-color: #444444; color: white; }
+        .btn-auto { background-color: #008CBA; color: white; }
+        .btn:hover { opacity: 0.8; transform: scale(1.05); }
+        
+        #status-text { font-size: 18px; color: #555; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-time Environment Monitor</h1>
+        
+        <!-- 1. 图表显示区域 -->
+        <canvas id="myChart"></canvas>
+
+        <!-- 2. 新增：远程控制面板 -->
+        <div class="control-panel">
+            <h2>远程控制面板 (Web -> Hardware)</h2>
+            <div>
+                <button class="btn btn-on" onclick="sendCommand(1)">🔴 强制开启风扇</button>
+                <button class="btn btn-off" onclick="sendCommand(0)">⚫ 强制关闭风扇</button>
+                <button class="btn btn-auto" onclick="sendCommand(2)">🔵 恢复自动模式</button>
+            </div>
+            <p id="status-text">当前指令状态：<strong>等待操作...</strong></p>
+        </div>
+    </div>
+
+    <script>
+        // --- 图表初始化逻辑 ---
+        const ctx = document.getElementById('myChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [
+                { label: 'Temp (°C)', borderColor: 'red', data: [], fill: false, tension: 0.3 },
+                { label: 'Humi (%)', borderColor: 'blue', data: [], fill: false, tension: 0.3 }
+            ]},
+            options: { 
+                scales: { 
+                    x: { display: true, title: { display: true, text: 'Time' } }, 
+                    y: { beginAtZero: false } 
+                },
+                animation: { duration: 0 } // 关闭动画，让实时更新更丝滑
+            }
+        });
+
+        // --- 核心 1：定时获取数据渲染图表 ---
+        async function updateData() {
+            try {
+                const response = await fetch('/api/data');
+                const data = await response.json();
+                
+                // 注意：如果 app.py 里已经做了 reverse，这里就不需要再 reverse 了
+                // 如果图表方向反了，就把下面这一行删掉或加上
+                const displayData = data; 
+                
+                chart.data.labels = displayData.map(d => d.timestamp.split(' ')[1]);
+                chart.data.datasets[0].data = displayData.map(d => d.temperature);
+                chart.data.datasets[1].data = displayData.map(d => d.humidity);
+                chart.update();
+            } catch (err) {
+                console.error("数据加载失败:", err);
+            }
+        }
+
+        // --- 核心 2：新增：发送控制指令函数 ---
+        function sendCommand(val) {
+            fetch('/api/control?state=' + val)
+                .then(res => res.json())
+                .then(data => {
+                    const statusText = document.getElementById('status-text');
+                    statusText.innerHTML = `当前指令状态：<span style="color:red"><strong>${data.current_mode}</strong></span>`;
+                    console.log("指令已送达:", data);
+                })
+                .catch(err => {
+                    alert("发送指令失败，请检查 Flask 是否开启！");
+                    console.error(err);
+                });
+        }
+
+        // 每 2 秒刷新一次图表
+        setInterval(updateData, 2000);
+    </script>
+</body>
+</html>
